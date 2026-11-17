@@ -76,10 +76,12 @@
         <div class="baris" style="margin-top:8px"><button id="btnLanjut">Lanjutkan</button><button class="abu" id="btnGantiAkun">Ganti akun</button></div>
       </div>
       <div id="judulMode" style="font-weight:bold;font-size:16px">Masuk</div>
+      <div id="blokLogin">
       <label for="gudang">Gudang / toko</label>
       <select id="gudang"><option value="">memuat...</option></select>
       <label for="pin">PIN toko</label>
       <input type="password" id="pin" inputmode="numeric" autocomplete="off">
+      </div>
       <label for="username">Username</label>
       <input type="text" id="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
       <label for="password">Password</label>
@@ -89,7 +91,7 @@
         <input type="password" id="password2" autocomplete="new-password">
         <label for="wa">Nomor WhatsApp</label>
         <input type="text" id="wa" inputmode="tel" autocomplete="tel" placeholder="contoh: 081234567890">
-        <div class="sub" style="margin-top:6px">Username 3 sampai 20 karakter (huruf kecil, angka, titik, garis bawah). Password minimal 6 karakter. PIN toko diminta oleh auditor atau kepala toko.</div>
+        <div class="sub" style="margin-top:6px">Username 3 sampai 20 karakter (huruf kecil, angka, titik, garis bawah). Password minimal 6 karakter.</div>
       </div>
       <div class="galat-teks" id="infoLogin"></div>
       <button id="btnMasuk" style="width:100%;margin-top:8px">Masuk</button>
@@ -191,7 +193,12 @@
   <div class="kotak">
     <div class="n" id="modalNama" style="font-weight:bold"></div>
     <div class="sub" id="modalKode" style="margin-bottom:6px"></div>
-    <label for="modalAlasan">Alasan cek manual (wajib, ketik sendiri)</label>
+    <label for="modalPreset">Alasan cepat</label>
+    <select id="modalPreset"><option value="">- pilih, atau ketik sendiri di bawah -</option>
+      <option value="Sudah diambil pelanggan, belum dibayar (tidak bisa discan)">Sudah diambil, belum bayar</option>
+      <option value="Unit demo/display, dicek fisik di etalase">Barang demo</option>
+    </select>
+    <label for="modalAlasan">Alasan cek manual (wajib)</label>
     <textarea id="modalAlasan" rows="3" maxlength="200" placeholder="Jelaskan kenapa barang ini tidak bisa discan"></textarea>
     <div class="galat-teks" id="modalGalat"></div>
     <div class="baris" style="margin-top:14px">
@@ -615,7 +622,7 @@ function kunciPassword(user, pw) {
 var modeDaftar = false;
 function aturMode(daftarMode) {
   modeDaftar = !!daftarMode;
-  $('blokDaftar').hidden = !modeDaftar; $('btnMasuk').hidden = modeDaftar; $('btnDaftar').hidden = !modeDaftar;
+  $('blokLogin').hidden = modeDaftar; $('blokDaftar').hidden = !modeDaftar; $('btnMasuk').hidden = modeDaftar; $('btnDaftar').hidden = !modeDaftar;
   $('linkMode').textContent = modeDaftar ? 'Sudah punya akun? Masuk' : 'Belum punya akun? Daftar di sini';
   $('judulMode').textContent = modeDaftar ? 'Buat akun baru' : 'Masuk';
   $('password').setAttribute('autocomplete', modeDaftar ? 'new-password' : 'current-password');
@@ -659,17 +666,16 @@ function ambilData() {
 }
 
 function daftar() {
-  var g = $('gudang').value, pin = $('pin').value.trim(), user = $('username').value.trim().toLowerCase();
+  var user = $('username').value.trim().toLowerCase();
   var pw = $('password').value, pw2 = $('password2').value, wa = normalisasiWa($('wa').value);
   function tolak(t) { pesanLogin(t); return Promise.resolve(); }
-  if (!g || !pin) return tolak('Pilih gudang dan isi PIN toko dulu.');
   if (!/^[a-z0-9._]{3,20}$/.test(user)) return tolak('Username 3 sampai 20 karakter: huruf kecil, angka, titik, atau garis bawah.');
   if (pw.length < 6) return tolak('Password minimal 6 karakter.');
   if (pw !== pw2) return tolak('Password dan ulangi password tidak sama.');
   if (!wa) return tolak('Nomor WhatsApp tidak valid. Contoh: 081234567890');
   $('btnDaftar').disabled = true; pesanLogin('Membuat akun...');
   return kunciPassword(user, pw).then(function (kunci) {
-    return api({ aksi: 'daftar', gudang: g, pin: pin, username: user, kunci: kunci, wa: wa }, 30000);
+    return api({ aksi: 'daftar', username: user, kunci: kunci, wa: wa }, 30000);
   }).then(function (r) {
     $('btnDaftar').disabled = false;
     if (!r.ok) { pesanLogin(r.error || 'Gagal membuat akun.'); return; }
@@ -804,7 +810,7 @@ function renderBelum() {
     if (it.demo) { demoBelum++; continue; }
     if (q && (it.nama + ' ' + infoBaris(it)).toUpperCase().indexOf(q) < 0) continue;
     total++;
-    if (n < 150) { ul.appendChild(item(it.nama, infoBaris(it))); n++; }
+    if (n < 150) { ul.appendChild(item(it.nama, infoBaris(it), tombol('Cek manual', (function (x) { return function () { bukaModal(x); }; })(b)))); n++; }
   }
   $('infoBelum').textContent = total + ' barang belum ditemukan' + (total > n ? ' (menampilkan ' + n + ', pakai pencarian)' : '') +
     (demoBelum ? '  |  ' + demoBelum + ' unit demo ada di tab Demo' : '') +
@@ -1191,7 +1197,7 @@ function bukaModalBanyak(daftar, awal) {
   modalDaftar = daftar.slice(); modalBaris = daftar.length === 1 ? daftar[0] : null;
   if (daftar.length === 1) { var it = S.baris[daftar[0]]; $('modalNama').textContent = it.nama; $('modalKode').textContent = infoBaris(it); }
   else { $('modalNama').textContent = daftar.length + ' unit demo dipilih'; $('modalKode').textContent = 'Alasan di bawah dipakai untuk semua unit ini.'; }
-  $('modalAlasan').value = awal || ''; $('modalGalat').textContent = '';
+  $('modalAlasan').value = awal || ''; $('modalPreset').value = ''; $('modalGalat').textContent = '';
   $('modal').hidden = false; $('modalAlasan').focus();
 }
 function tutupModal() { $('modal').hidden = true; modalBaris = null; modalDaftar = []; $('scan').focus(); }
@@ -1270,6 +1276,7 @@ function init() {
     if (a.length < MIN_ALASAN) { $('modalGalat').textContent = 'Alasan wajib diisi, minimal ' + MIN_ALASAN + ' karakter.'; $('modalAlasan').focus(); return; }
     var d = modalDaftar.slice(); tutupModal(); if (d.length) manualBanyak(d, true, a);
   };
+  $('modalPreset').onchange = function () { if (this.value) $('modalAlasan').value = this.value; };
   $('cariDemo').oninput = renderDemo;
   $('cariHitung').oninput = renderHitung; $('saringHitung').onchange = renderHitung; $('kategoriHitung').onchange = renderHitung; $('jenisHitung').onchange = renderHitung;
   $('btnJenisTanpa').onclick = function () { aturJenis('TANPA_IMEI'); }; $('btnJenisImei').onclick = function () { aturJenis('BER_IMEI'); };
