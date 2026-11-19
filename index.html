@@ -37,6 +37,7 @@
   #hasil .nama { display: block; font-weight: normal; font-size: 14px; margin-top: 6px; }
   .TERSCAN { background: #b6d7a8 !important; } .DUPLIKAT { background: #fff2cc !important; }
   .SALAH_TOKO { background: #d9b3ff !important; } .TIDAK_DITEMUKAN { background: #ea9999 !important; }
+  .TERCATAT { background: #e8eaed !important; }
   .SALAH_BACA { background: #f9cb9c !important; } .ERROR { background: #ea9999 !important; }
   ul.daftar { list-style: none; margin: 0; padding: 0; }
   ul.daftar li { background: #fff; border-radius: 8px; padding: 9px 10px; margin-bottom: 6px; display: flex; gap: 8px; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,.1); }
@@ -183,7 +184,7 @@
 
     <!-- catatan -->
     <div id="tCatatan" class="panel" hidden>
-      <div class="sub" style="margin-bottom:6px">Scan sesi ini yang tidak ditemukan, salah toko, salah baca, atau dobel. Semua tetap tercatat di Sheets.</div>
+      <div class="sub" style="margin-bottom:6px">Scan sesi ini yang perlu diperhatikan. Semua tetap tercatat di Sheets.</div>
       <ul class="daftar" id="listCatatan"></ul>
     </div>
   </div>
@@ -1061,20 +1062,23 @@ function kirimHitung() {
   });
 }
 
-var JUDUL = { TERSCAN: 'TERSCAN', DUPLIKAT: 'SUDAH DISCAN', SALAH_TOKO: 'SALAH TOKO', TIDAK_DITEMUKAN: 'TIDAK DITEMUKAN', SALAH_BACA: 'SALAH BACA, SCAN ULANG', ERROR: 'ERROR', DITOLAK: 'DITOLAK' };
+var JUDUL = { TERSCAN: 'TERSCAN', DUPLIKAT: 'SUDAH DISCAN', SALAH_TOKO: 'SALAH TOKO', TIDAK_DITEMUKAN: 'TIDAK DITEMUKAN', SALAH_BACA: 'SALAH BACA, SCAN ULANG', ERROR: 'ERROR', DITOLAK: 'DITOLAK', TERCATAT: 'TERCATAT' };
+// Tampilan ke petugas: hasil TIDAK_DITEMUKAN dan SALAH_TOKO ditampilkan sebagai TERCATAT (netral), agar tidak curiga.
+// Catatan asli tetap dikirim dan dicatat di Sheets. Hanya layar di HP yang disamarkan.
+function tampilH_(h) { return (h === 'TIDAK_DITEMUKAN' || h === 'SALAH_TOKO') ? 'TERCATAT' : h; }
 
 function renderCatatan() {
   var ul = $('listCatatan'); ul.innerHTML = '';
   S.catatan.forEach(function (c) {
     var li = item((JUDUL[c.h] || c.h) + ': ' + c.kode, [c.nama, c.asli, c.pesan].filter(Boolean).join(' | '));
-    li.className = c.h; ul.appendChild(li);
+    li.className = tampilH_(c.h); ul.appendChild(li);
   });
 }
 function renderRiwayat() {
   var ul = $('riwayat'); ul.innerHTML = '';
   S.riwayat.slice(0, 8).forEach(function (c) {
-    var li = document.createElement('li'); li.className = c.h;
-    li.textContent = (JUDUL[c.h] || c.h) + ': ' + (c.nama || c.kode) + (c.asli ? ' | ' + c.asli : ''); ul.appendChild(li);
+    var h = tampilH_(c.h), li = document.createElement('li'); li.className = h;
+    li.textContent = (JUDUL[h] || h) + ': ' + (c.nama || c.kode) + (c.asli ? ' | ' + c.asli : ''); ul.appendChild(li);
   });
 }
 
@@ -1098,11 +1102,11 @@ function bunyi(jenis) {
   try {
     var ctx = bunyi.ctx || (bunyi.ctx = new (window.AudioContext || window.webkitAudioContext)());
     var o = ctx.createOscillator(), g = ctx.createGain();
-    o.frequency.value = jenis === 'TERSCAN' ? 880 : jenis === 'DUPLIKAT' ? 520 : jenis === 'DITOLAK' ? 160 : 220;
+    o.frequency.value = (jenis === 'TERSCAN' || jenis === 'TERCATAT') ? 880 : jenis === 'DUPLIKAT' ? 520 : jenis === 'DITOLAK' ? 160 : 220;
     g.gain.value = 0.1; o.connect(g); g.connect(ctx.destination);
-    o.start(); o.stop(ctx.currentTime + (jenis === 'TERSCAN' ? 0.08 : 0.28));
+    o.start(); o.stop(ctx.currentTime + ((jenis === 'TERSCAN' || jenis === 'TERCATAT') ? 0.08 : 0.28));
   } catch (e) {}
-  try { if (navigator.vibrate) navigator.vibrate(jenis === 'TERSCAN' ? 40 : [150, 80, 150]); } catch (e) {}
+  try { if (navigator.vibrate) navigator.vibrate((jenis === 'TERSCAN' || jenis === 'TERCATAT') ? 40 : [150, 80, 150]); } catch (e) {}
 }
 
 /* ---------------------------------------------------------------- scan */
@@ -1127,17 +1131,18 @@ function proses(raw, sumber, jeda) {
     S.antrean.push({ id: uid(), t: new Date().toISOString(), u: S.user, raw: raw, src: sumber || 'scanner', jeda: (typeof jeda === 'number' ? jeda : null) });
     ls('op_antrean_' + S.gudang, S.antrean);
   }
-  var rec = { h: h, kode: p.kompak || raw.trim(), nama: nama, pesan: pesan, asli: asli };
+  var tampak = tampilH_(h);
+  var rec = { h: tampak, kode: p.kompak || raw.trim(), nama: nama, pesan: (tampak === h ? pesan : ''), asli: asli };   // saran 'Mirip' dan alasan disembunyikan
   S.riwayat.unshift(rec);
-  if (h !== 'TERSCAN') S.catatan.unshift(rec);
-  var box = $('hasil'); box.className = h; box.innerHTML = '';
-  box.appendChild(document.createTextNode(JUDUL[h] || h));
+  if (tampak !== 'TERSCAN') S.catatan.unshift(rec);
+  var box = $('hasil'); box.className = tampak; box.innerHTML = '';
+  box.appendChild(document.createTextNode(JUDUL[tampak] || tampak));
   var sp = document.createElement('span'); sp.className = 'nama'; sp.textContent = nama || pesan; box.appendChild(sp);
   function baris2(t) { var x = document.createElement('span'); x.className = 'nama'; x.textContent = t; box.appendChild(x); }
   if (asli) baris2('IMEI/SN: ' + asli);
   var terbaca = p.kompak || '';
   if (terbaca && (!asli || uraiKode(asli).kompak !== terbaca)) baris2('Terbaca: ' + terbaca);   // kode yang benar-benar dibaca scanner/kamera
-  bunyi(h); render(); statusSinkron();
+  bunyi(tampak); render(); statusSinkron();
   return rec;
 }
 
@@ -1158,17 +1163,24 @@ function tolakInput(jenis, teks) {
 /* ---------------------------------------------------------------- kirim */
 function milikku(x) { return !x.u || x.u === S.user; }   // data milik akun lain tidak boleh dikirim atas nama akun ini
 
+// Jadwal kirim scan. Hasil scan di layar tetap INSTAN (dicocokkan di HP); yang diatur di sini hanya kapan data dikirim ke server.
+var KIRIM_JEDA_MS = 15000;   // scan paling lama menunggu sebelum dikirim
+var KIRIM_MIN_SCAN = 30;     // atau dikirim lebih awal kalau sudah sebanyak ini
+var KIRIM_ACAK_MS = 5000;    // tambahan jeda acak per HP supaya banyak HP tidak mengirim bersamaan
+var acakKirim = Math.random() * KIRIM_ACAK_MS;
+
 function perluKirim() {
   var mine = S.antrean.filter(milikku);
   if (!mine.length) return false;
-  if (mine.length >= 10) return true;
-  return Date.now() - Date.parse(mine[0].t) >= 4000;
+  if (mine.length >= KIRIM_MIN_SCAN) return true;
+  return Date.now() - Date.parse(mine[0].t) >= KIRIM_JEDA_MS + acakKirim;
 }
 
 function kirim() {
   var batch = S.antrean.filter(milikku).slice(0, 100);
   if (S.mengirim || !batch.length) return Promise.resolve();
   S.mengirim = true;
+  acakKirim = Math.random() * KIRIM_ACAK_MS;   // jeda acak baru untuk kiriman berikutnya
   return api({ aksi: 'kirim', gudang: S.gudang, pin: S.pin, token: S.token,
                scans: batch.map(function (x) { return { id: x.id, t: x.t, raw: x.raw, src: x.src, jeda: x.jeda, blok: x.blok, u: x.u }; }) }, 60000)
     .then(function (r) {
@@ -1178,7 +1190,7 @@ function kirim() {
       S.antrean = S.antrean.filter(function (x) { return !ids[x.id]; });
       ls('op_antrean_' + S.gudang, S.antrean);
       S.gagal = 0; S.galat = ''; statusSinkron();
-      if (S.antrean.some(milikku)) return kirim();
+      if (S.antrean.filter(milikku).length >= 100) return kirim();   // masih ada satu batch penuh: lanjut; sisanya menunggu jadwal
     }, function () {
       S.mengirim = false; S.gagal++; S.coba = Date.now() + Math.min(60000, 5000 * Math.pow(2, S.gagal)); statusSinkron();
     });
